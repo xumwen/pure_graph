@@ -12,11 +12,12 @@ flickr:
 reddit:
   epochs: 800
   batch_size: 3000
-  subgraph_nodes: 8680
+  subgraph_nodes: 8700
 
 ppi:
   epochs: 1500
   batch_size: 6000
+  subgraph: 8350
 
   hparams:
     hidden_units:
@@ -24,8 +25,9 @@ ppi:
     learning_rate:
 
 ppi-large:
-  epochs: 300
+  epochs: 800
   batch_size: 6000
+  subgraph_nodes: 14300
 
   hparams:
     hidden_units:

@@ -102,7 +102,7 @@ def eval_sample(norm_loss):
 
     res_df_list = []
     for data in loader:
-
+        print("subgraph:", data.x.shape)
         data = data.to(device)
 
         if norm_loss == 1:

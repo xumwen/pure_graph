@@ -64,11 +64,11 @@ class MetaSampler(object):
         and to avoid exceeding subgraph_nodes
         """
         num_left = self.subgraph_nodes - len(n_id)
-        if len(neighbor_id) >= num_left:
-            np.random.shuffle(neighbor_id)
-            sample_n_id = neighbor_id[:num_left]
-        else:
+        np.random.shuffle(neighbor_id)
+        if len(neighbor_id) <= num_left:
             sample_n_id = neighbor_id
+        else:
+            sample_n_id = neighbor_id[:num_left]
         
         return sample_n_id
 
@@ -161,6 +161,8 @@ class MetaSampler(object):
         data.n_id = n_id
         data.e_id = e_id
 
+        # print("subgraph:", len(n_id))
+
         return data
 
     def __produce_subgraph__(self):
@@ -183,6 +185,9 @@ class MetaSampler(object):
                 sample_n_id = self.random_sample_left_nodes(n_id, sample_n_id)
             
             n_id = np.union1d(n_id, sample_n_id)
+            # print("n_id:", n_id.shape)
+            # print("neighbor_id:", neighbor_id.shape)
+            # print("sample_id:", sample_n_id.shape)
             if len(n_id) >= self.subgraph_nodes or len(sample_n_id) == 0:
                 break
 

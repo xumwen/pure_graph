@@ -30,8 +30,8 @@ def parse_args(config_path):
     parser.add_argument('--hidden_units', type=int, default=256)
     # for meta sampler
     parser.add_argument('--subgraph_nodes', type=int)
-    parser.add_argument('--sample_step', type=int, default=10)
-    parser.add_argument('--meta_start_epoch', type=int, default=5)
+    parser.add_argument('--sample_step', type=int, default=20)
+    parser.add_argument('--meta_start_epoch', type=int, default=10)
     parser.add_argument('--train_ppo_interval', type=int, default=1)
     
 

@@ -14,16 +14,13 @@ from sklearn.metrics import accuracy_score, f1_score
 from meta_sampler import MetaSampler
 
 
-NUM_INIT_NODES = 10
-
 LOG_SIG_MIN = -20
 LOG_SIG_MAX = 2
 EPS = 1e-5
 SCALE = 10
 CLIP_EPS = 0.1
 
-nb_episodes = 3
-nb_steps = 10
+nb_episodes = 5
 nb_epoches = 3
 
 gamma = 0.98
@@ -93,17 +90,17 @@ class MetaSampleEnv():
 
         return s, done
     
-    def step(self, action):
+    def step(self, action, num_step):
         """extend current subgraph with an action"""
         sample_n_id = self.meta_sampler.neighbor_sample(self.neighbor_id, action)
-        # avoid over subgraph_nodes(always intend to sample all neighbors)
+        # avoid exceeding subgraph_nodes(always intend to sample all neighbors)
         sample_n_id = self.meta_sampler.random_sample_left_nodes(self.n_id, sample_n_id)
 
         self.n_id = np.union1d(self.n_id, sample_n_id)
         done = False
 
-        if len(self.n_id) >= self.subgraph_nodes:
-            # last subgraph
+        if len(self.n_id) >= self.subgraph_nodes or num_step == self.sample_step:
+            # last extension
             self.neighbor_id = self.n_id
             done = True
 
@@ -311,9 +308,9 @@ class PPO:
                     break
 
                 # get a subgraph step by step
-                for i in range(nb_steps):
+                for step_i in range(env.sample_step):
                     a, logp = self.policy.action(s)
-                    s_prime, done = env.step(a)
+                    s_prime, done = env.step(a, step_i+1)
 
                     self.memory.states.append(s)
                     self.memory.actions.append(a)
