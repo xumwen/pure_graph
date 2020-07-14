@@ -28,7 +28,6 @@ def train_sample(norm_loss, loss_op):
     node_emb_list = []
     total_loss = total_examples = 0
     for data in loader:
-        # print("x:", data.x.shape)
         data = data.to(device)
         optimizer.zero_grad()
         sub_graph_nodes.append(data.num_nodes)
@@ -44,7 +43,7 @@ def train_sample(norm_loss, loss_op):
         total_loss += loss.item() * data.num_nodes
         total_examples += data.num_nodes
         # return node embedding
-        node_emb_list.append([data.n_id, node_emb])
+        node_emb_list.append([data.indices.long(), node_emb])
 
     return total_loss / total_examples, np.mean(sub_graph_nodes), np.mean(sub_graph_edges), node_emb_list
 

@@ -122,7 +122,7 @@ class MetaSampleEnv():
             return True
         return False
 
-    def eval(self, episode):
+    def eval(self):
         """evaluation and return loss as reward"""
         self.model.zero_grad()
         self.model.eval()
@@ -286,8 +286,8 @@ class PPO:
             if loss.mean().item() > 100:
                 # print('ratio: ', ratio)
                 # print('advantage: ', advantage)
-                print('Loss part 1: ', -torch.min(surr1, surr2).mean().item())
-                print('Loss part 2: ', F.l1_loss(s_value, td_target.detach()).mean().item())
+                # print('Loss part 1: ', -torch.min(surr1, surr2).mean().item())
+                # print('Loss part 2: ', F.l1_loss(s_value, td_target.detach()).mean().item())
                 print('Loss sum: ', loss.mean().item())
 
             self.optimizer.zero_grad()
@@ -328,7 +328,7 @@ class PPO:
                     if done:
                         break
 
-            r = env.eval(eid+1)
+            r = env.eval()
             for i in range(action_cnt):
                 self.memory.rewards.append(r)
             self.train()

@@ -1,5 +1,5 @@
 flickr:
-  epochs: 100
+  epochs: 60
   batch_size: 6000
   subgraph_nodes: 18000
 
