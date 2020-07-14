@@ -4,6 +4,7 @@ from dataset import PPI
 from torch_geometric.data import GraphSAINTRandomWalkSampler, \
     NeighborSampler, GraphSAINTNodeSampler, GraphSAINTEdgeSampler, ClusterData, ClusterLoader
 from sampler import GraphSAINTNodeSampler, GraphSAINTEdgeSampler, MySAINTSampler
+from meta_sampler import MetaSampler
 import torch.nn as nn
 from metric_and_loss import NormCrossEntropyLoss, NormBCEWithLogitsLoss, FixedBCEWithLogitsLoss
 
@@ -54,7 +55,7 @@ def build_loss_op(args):
             return FixedBCEWithLogitsLoss(reduction='none')
 
 
-def build_sampler(args, data, save_dir):
+def build_sampler(args, data, save_dir, policy=None, node_emb=None, random_sample=False):
     if args.sampler == 'rw-my':
         msg = 'Use GraphSaint randomwalk sampler(mysaint sampler)'
         loader = MySAINTSampler(data, batch_size=args.batch_size, sample_type='random_walk',
@@ -83,6 +84,13 @@ def build_sampler(args, data, save_dir):
         cluster_data = ClusterData(data, num_parts=args.num_parts, save_dir=save_dir)
         loader = ClusterLoader(cluster_data, batch_size=20, shuffle=True,
                                num_workers=0)
+    elif args.sampler == 'meta':
+        msg = 'Use meta sampler'
+        meta_sampler = MetaSampler(data, policy=policy, node_emb=node_emb,
+                                subgraph_nodes=args.subgraph_nodes, sample_step=args.sample_step, 
+                                shuffle=True, random_sample=random_sample)
+        meta_sampler.sample_subgraphs()
+        loader = meta_sampler.subgraphs
     else:
         raise KeyError('Sampler type error')
 

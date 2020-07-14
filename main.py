@@ -10,6 +10,8 @@ from utlis import load_dataset, build_loss_op, build_sampler
 import pandas as pd
 from time import time
 
+from ppo import PPO, MetaSampleEnv
+
 log_path = './logs'
 summary_path = './summary'
 torch.manual_seed(2020)
@@ -23,24 +25,28 @@ def train_sample(norm_loss, loss_op):
         model.set_aggr('mean')
     sub_graph_nodes = []
     sub_graph_edges = []
+    node_emb_list = []
     total_loss = total_examples = 0
     for data in loader:
+        # print("x:", data.x.shape)
         data = data.to(device)
         optimizer.zero_grad()
         sub_graph_nodes.append(data.num_nodes)
         sub_graph_edges.append(data.edge_index.shape[1])
         if norm_loss == 1:
-            out = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
+            out, node_emb = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
             loss = loss_op(out, data)
         else:
-            out = model(data.x, data.edge_index)
+            out, node_emb = model(data.x, data.edge_index)
             loss = loss_op(out, data.y)[data.train_mask].mean()
         loss.backward()
         optimizer.step()
         total_loss += loss.item() * data.num_nodes
         total_examples += data.num_nodes
+        # return node embedding
+        node_emb_list.append([data.n_id, node_emb])
 
-    return total_loss / total_examples, np.mean(sub_graph_nodes), np.mean(sub_graph_edges)
+    return total_loss / total_examples, np.mean(sub_graph_nodes), np.mean(sub_graph_edges), node_emb_list
 
 
 def train_full(loss_op):
@@ -48,7 +54,7 @@ def train_full(loss_op):
     model.set_aggr('mean')
 
     optimizer.zero_grad()
-    out = model(data.x.to(device), data.edge_index.to(device))
+    out, _ = model(data.x.to(device), data.edge_index.to(device))
 
     loss = loss_op(out[data.train_mask], data.y.to(device)[data.train_mask]).mean()
 
@@ -62,7 +68,7 @@ def eval_full():
     model.eval()
     model.set_aggr('mean')
 
-    out = model(data.x.to(device), data.edge_index.to(device))
+    out, _ = model(data.x.to(device), data.edge_index.to(device))
     out = out.log_softmax(dim=-1)
     pred = out.argmax(dim=-1)
     correct = pred.eq(data.y.to(device))
@@ -78,7 +84,7 @@ def eval_full():
 def eval_full_multi():
     model.eval()
     model.set_aggr('mean')
-    out = model(data.x.to(device), data.edge_index.to(device))
+    out, _ = model(data.x.to(device), data.edge_index.to(device))
     out = (out > 0).float().cpu().numpy()
     accs = []
     for _, mask in data('train_mask', 'val_mask', 'test_mask'):
@@ -102,9 +108,9 @@ def eval_sample(norm_loss):
 
         if norm_loss == 1:
             # TODO: check edge attr
-            out = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
+            out, _ = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
         else:
-            out = model(data.x, data.edge_index)
+            out, _ = model(data.x, data.edge_index)
         out = out.log_softmax(dim=-1)
         pred = out.argmax(dim=-1)
 
@@ -144,9 +150,9 @@ def eval_sample_multi(norm_loss):
         data = data.to(device)
 
         if norm_loss == 1:
-            out = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
+            out, _ = model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
         else:
-            out = model(data.x, data.edge_index)
+            out, _ = model(data.x, data.edge_index)
         res_batch = (out > 0).float().cpu().numpy()
         res_batch = pd.DataFrame(res_batch)
         res_batch['nid'] = data.indices.cpu().numpy()
@@ -180,6 +186,26 @@ def func(x):
     else:
         return -1
 
+def update_node_emb(node_emb, epoch_node_emb_list, moving_avg=0.9):
+    # load epoch embedding
+    epoch_node_emb = torch.zeros_like(node_emb)
+    for [n_id, n_emb] in epoch_node_emb_list:
+        epoch_node_emb[n_id] = n_emb.to('cpu')
+    
+    # normalize epoch embedding
+    mean = epoch_node_emb.mean()
+    std = epoch_node_emb.std()
+    epoch_node_emb = (epoch_node_emb - mean) / (std + 1e-5)
+
+    # update node embedding by moving average
+    node_emb = moving_avg * node_emb + \
+            (1 - moving_avg) * epoch_node_emb
+    
+    return node_emb
+
+def train_ppo_step(data, model, ppo, node_emb, node_df, args, device):
+    env = MetaSampleEnv(data, model, node_emb, node_df, args, device)
+    ppo.train_step(env)
 
 if __name__ == '__main__':
 
@@ -202,13 +228,6 @@ if __name__ == '__main__':
 
     data = dataset[0]
 
-    # if args.self_loop == 1 and contains_self_loops(data.edge_index) is False:
-    #     logger.info('Raw graph do not contains self loop, add self loop now.')
-    #     data.edge_index, _ = add_self_loops(data.edge_index, num_nodes=data.num_nodes)
-    # if args.self_loop == 0 and contains_self_loops(data.edge_index):
-    #     logger.info('Raw graph contains self loop, remove self loop now.')
-    #     data.edge_index, _ = remove_self_loops(data.edge_index)
-
     row, col = data.edge_index
     data.edge_attr = 1. / degree(col, data.num_nodes)[col]  # Norm by in-degree.
     data.indices = torch.arange(0, data.num_nodes).int()
@@ -229,9 +248,6 @@ if __name__ == '__main__':
         test_nid = data.indices[data.test_mask].numpy()
         val_nid = data.indices[data.val_mask].numpy()
         label_matrix = data.y.numpy()
-
-    loader, msg = build_sampler(args, data, dataset.processed_dir)
-    logger.info(msg)
 
     if args.use_gpu == 1:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -255,11 +271,26 @@ if __name__ == '__main__':
     summary_accs_train = []
     summary_accs_test = []
 
+    # init ppo and node_emb for meta_sampler
+    if args.sampler == 'meta':
+        ppo = PPO(state_size=args.hidden_units * 2, device=device)
+        node_emb = torch.zeros(data.num_nodes, args.hidden_units)
+
     for epoch in range(1, args.epochs + 1):
+        # build sampler
+        if args.sampler == 'meta':
+            loader, msg = build_sampler(args, data, dataset.processed_dir, 
+                                        ppo.policy, node_emb, random_sample=(epoch<=args.meta_start_epoch))
+        else:
+            loader, msg = build_sampler(args, data, dataset.processed_dir)
+
+        # training
         if args.train_sample == 1:
-            loss, sub_graph_nodes, sub_graph_edges = train_sample(norm_loss=args.loss_norm, loss_op=loss_op)
+            loss, sub_graph_nodes, sub_graph_edges, epoch_node_emb_list = train_sample(norm_loss=args.loss_norm, loss_op=loss_op)
         else:
             loss, sub_graph_nodes, sub_graph_edges = train_full(loss_op=loss_op)
+        
+        # evaluation
         if args.eval_sample == 1:
             if is_multi:
                 accs = eval_sample_multi(norm_loss=args.loss_norm)
@@ -270,6 +301,14 @@ if __name__ == '__main__':
                 accs = eval_full_multi()
             else:
                 accs = eval_full()
+        
+        # train ppo
+        if args.sampler == 'meta':
+            node_emb = update_node_emb(node_emb, epoch_node_emb_list)
+            if epoch > args.meta_start_epoch and epoch % args.train_ppo_interval == 0:
+                train_ppo_step(data, model, ppo, node_emb, node_df, args, device)
+
+        # logging
         if epoch % args.log_interval == 0:
             logger.info(f'Epoch: {epoch:02d}, Sub graph: ({sub_graph_nodes}, {sub_graph_edges}), '
                         f'Loss: {loss:.4f}, Train-acc: {accs[0]:.4f}, Val-acc: {accs[1]:.4f}, Test-acc: {accs[2]:.4f}')

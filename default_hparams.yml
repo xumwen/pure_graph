@@ -1,6 +1,7 @@
 flickr:
-  epochs: 300
+  epochs: 100
   batch_size: 6000
+  subgraph_nodes: 18000
 
   hparams:
     hidden_units: 256
@@ -11,6 +12,7 @@ flickr:
 reddit:
   epochs: 800
   batch_size: 3000
+  subgraph_nodes: 8680
 
 ppi:
   epochs: 1500
