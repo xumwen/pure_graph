@@ -15,7 +15,6 @@ from environment import MetaSampleEnv
 
 log_path = './logs'
 summary_path = './summary'
-torch.manual_seed(2020)
 
 
 def train_sample(norm_loss, loss_op):

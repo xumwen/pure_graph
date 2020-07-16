@@ -81,24 +81,26 @@ class MetaSampler(object):
             # avoid small sigma1 which leads kl_div to nan
             return neighbor_id
         
-        action = self.rescale_action(action)
+        action = self.rescale_action(action, neighbor_id)
 
-        # calculate kl-divergense to sample nodes
+        # action distribution
         mu1 = action
-        sigma1 = self.node_emb.std(dim=1).mean()
+        sigma1 = self.node_emb[neighbor_id].std(dim=1).mean()
+
+        # neighbor distribution
         mu2 = self.node_emb[neighbor_id].mean(dim=1)
         sigma2 = self.node_emb[neighbor_id].std(dim=1)
 
+        # calculate kl-divergense to sample nodes
         kl_div = (sigma2 / sigma1).log() + (sigma1**2 + (mu1 - mu2)**2) / (2 * sigma2**2) - 0.5
         kl_div = self.rescale_kl_divergence(kl_div)
+
         weight = torch.exp(-kl_div)
+        sample_n_id = neighbor_id[torch.bernoulli(weight) == 1]
 
         # print("action:", action)
         # print("kl_div:", kl_div)
         # print("weight:", weight)
-
-        sample_n_id = neighbor_id[torch.bernoulli(weight) == 1]
-
         # print("sample_num:", len(sample_n_id))
 
         return sample_n_id
@@ -110,21 +112,22 @@ class MetaSampler(object):
         state = torch.cat([cent_emb, neighbor_emb], dim=0)
         return state.detach()
     
-    def rescale_action(self, action):
+    def rescale_action(self, action, neighbor_id):
         # rescale action to get a sample distribution close to nodes_emb distribution
+        # action range is (neighbor_mu_min, neighbor_mu_max)
         mu = action
 
-        nodes_mu = self.node_emb.mean(dim=1)
-        mu_max = nodes_mu.max()
-        mu_min = nodes_mu.min()
+        neighbor_mu = self.node_emb[neighbor_id].mean(dim=1)
+        mu_max = neighbor_mu.max()
+        mu_min = neighbor_mu.min()
 
         mu = np.tanh(mu) * (mu_max - mu_min) / 2 + (mu_max + mu_min) / 2
 
         return mu
     
     def rescale_kl_divergence(self, kl_div, scope=2):
-        # rescale kl_div to [0, scope]
-        # then weight range [exp(-scope), 1]
+        # rescale kl_div to avoid sample_weight too small
+        # kl_div range is [0, scope] and then weight range is [exp(-scope), 1]
         kl_div = kl_div - kl_div.min()
         kl_div = kl_div / kl_div.max() * scope
 
@@ -156,12 +159,10 @@ class MetaSampler(object):
         for key, item in data:
             if item.size(0) == N:
                 data[key] = item[n_id]
-            if item.size(0) == E:
+            elif item.size(0) == E:
                 data[key] = item[e_id]
         data.n_id = n_id
         data.e_id = e_id
-
-        # print("subgraph:", len(n_id))
 
         return data
 
@@ -185,9 +186,8 @@ class MetaSampler(object):
                 sample_n_id = self.random_sample_left_nodes(n_id, sample_n_id)
             
             n_id = np.union1d(n_id, sample_n_id)
-            # print("n_id:", n_id.shape)
-            # print("neighbor_id:", neighbor_id.shape)
-            # print("sample_id:", sample_n_id.shape)
+            # print(f'Neighbor: {neighbor_id.shape[0]:02d}, Sample: {sample_n_id.shape[0]:02d}, '
+            #       f'Ratio: {(sample_n_id.shape[0] / neighbor_id.shape[0]):.2f}')
             if len(n_id) >= self.subgraph_nodes or len(sample_n_id) == 0:
                 break
 

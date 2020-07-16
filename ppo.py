@@ -93,6 +93,7 @@ class ActorCritic(nn.Module):
         action_std = action_log_std.exp()
 
         normal = Normal(action_mean, action_std)
+        # print("action mean:", action_mean, "action std:", action_std)
         entropy = normal.entropy()
 
         action = normal.sample()
@@ -158,8 +159,6 @@ class PPO:
             loss = loss_1 + loss_2 + loss_3
 
             if loss.item() > 100:
-                # print('ratio: {:.2f}'.format(ratio))
-                # print('advantage: {:.2f}'.format(advantage))
                 print('Loss part 1: {:.2f}'.format(loss_1.item()))
                 print('Loss part 2: {:.2f}'.format(loss_2.item()))
                 print('Loss part 3: {:.2f}'.format(loss_3.item()))
