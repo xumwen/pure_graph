@@ -13,7 +13,7 @@ def parse_args(config_path):
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='flickr')
     parser.add_argument('--train_sample', type=int, default=1, choices=[0, 1])
-    parser.add_argument('--eval_sample', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--eval_sample', type=int, default=1, choices=[0, 1])
     parser.add_argument('--loss_norm', type=int, default=0, choices=[0, 1])
     parser.add_argument('--epochs', type=int)
     parser.add_argument('--batch_size', type=int)
@@ -26,14 +26,15 @@ def parse_args(config_path):
     parser.add_argument('--log_interval', type=int, default=10)
     parser.add_argument('--self_loop', type=int, default=1, choices=[0, 1])
     parser.add_argument('--num_heads', type=int, default=1)
-    parser.add_argument('--num_parts', type=int, default=100)
+    parser.add_argument('--num_parts', type=int, default=80)
     parser.add_argument('--hidden_units', type=int, default=256)
+    parser.add_argument('--seed', type=int, default=0)
     # for meta sampler
     parser.add_argument('--subgraph_nodes', type=int)
     parser.add_argument('--sample_step', type=int, default=20)
     parser.add_argument('--meta_start_epoch', type=int, default=10)
     parser.add_argument('--train_ppo_interval', type=int, default=1)
-    
+
 
     args = parser.parse_args()
     if args.train_sample == 0:

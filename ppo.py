@@ -20,7 +20,7 @@ EPS = 1e-5
 SCALE = 10
 CLIP_EPS = 0.1
 
-nb_episodes = 5
+nb_episodes = 2
 nb_epoches = 3
 
 gamma = 0.98
@@ -46,15 +46,24 @@ class Memory:
 
 
 class MetaSampleEnv():
-    def __init__(self, data, model, node_emb, node_df, args, device):
+    def __init__(self, data, model, node_emb, node_df, label_matrix, args, device):
         self.model = model
         self.data = data
         self.num_nodes = data.num_nodes
-        self.node_emb = node_emb
+
+        # task required
+        self.is_multi = args.is_multi
         self.node_df = node_df
+        self.label_matrix = label_matrix
+        self.train_nid = self.data.indices[data.train_mask].numpy()
+        self.test_nid = self.data.indices[data.test_mask].numpy()
+        self.val_nid = self.data.indices[data.val_mask].numpy()
+
+        # meta sampler required
+        self.node_emb = node_emb
         self.subgraph_nodes = args.subgraph_nodes
         self.sample_step = args.sample_step
-        self.norm_loss = args.loss_norm
+
         self.device = device
     
     def reset(self):
@@ -118,22 +127,27 @@ class MetaSampleEnv():
         if self.meta_sampler.node_visit.sum() == self.num_nodes:
             return True
         return False
-
+    
     def eval(self):
-        """evaluation and return loss as reward"""
+        """evaluation and return validation f1-micro as reward"""
+        loader = self.meta_sampler.subgraphs
+        if self.is_multi:
+            r = self.eval_sample_multi(loader)
+        else:
+            r = self.eval_sample(loader)
+        
+        return r
+
+    def eval_sample(self, loader):
         self.model.zero_grad()
         self.model.eval()
 
-        loader = self.meta_sampler.subgraphs
-
         res_df_list = []
         for data in loader:
-            data.to(self.device)
 
-            if self.norm_loss == 1:
-                out, _ = self.model(data.x, data.edge_index, data.edge_norm * data.edge_attr)
-            else:
-                out, _ = self.model(data.x, data.edge_index)
+            data = data.to(self.device)
+            out, _ = self.model(data.x, data.edge_index)
+
             out = out.log_softmax(dim=-1)
             pred = out.argmax(dim=-1)
 
@@ -142,24 +156,57 @@ class MetaSampleEnv():
             res_batch['pred'] = pred.cpu().numpy()
             res_df_list.append(res_batch)
 
-            res_df_duplicate = pd.concat(res_df_list)
-            tmp = res_df_duplicate.groupby(['nid', 'pred']).size().unstack().fillna(0)
-            res_df = pd.DataFrame()
-            res_df['nid'] = tmp.index
-            res_df['pred'] = tmp.values.argmax(axis=1)
+        res_df_duplicate = pd.concat(res_df_list)
+        tmp = res_df_duplicate.groupby(['nid', 'pred']).size().unstack().fillna(0)
+        res_df = pd.DataFrame()
+        res_df['nid'] = tmp.index
+        res_df['pred'] = tmp.values.argmax(axis=1)
 
-            res_df.columns = ['nid', 'pred']
-            res_df = res_df.merge(self.node_df, on=['nid'], how='left')
+        res_df.columns = ['nid', 'pred']
+        res_df = res_df.merge(self.node_df, on=['nid'], how='left')
 
-            accs = res_df.groupby(['mask']).apply(lambda x: accuracy_score(x['y'], x['pred'])).reset_index()
-            accs.columns = ['mask', 'acc']
-            accs = accs.sort_values(by=['mask'], ascending=True)
-            accs = accs['acc'].values
+        accs = res_df.groupby(['mask']).apply(lambda x: accuracy_score(x['y'], x['pred'])).reset_index()
+        accs.columns = ['mask', 'acc']
+        accs = accs.sort_values(by=['mask'], ascending=True)
+        accs = accs['acc'].values
         
         self.model.train()
 
         return accs[1]
     
+    def eval_sample_multi(self, loader):
+        self.model.zero_grad()
+        self.model.eval()
+
+        res_df_list = []
+        for data in loader:
+
+            data = data.to(self.device)
+            out, _ = self.model(data.x, data.edge_index)
+
+            res_batch = (out > 0).float().cpu().numpy()
+            res_batch = pd.DataFrame(res_batch)
+            res_batch['nid'] = data.indices.cpu().numpy()
+            res_df_list.append(res_batch)
+
+        res_df_duplicate = pd.concat(res_df_list)
+        length = res_df_duplicate.groupby(['nid']).size().values
+        tmp = res_df_duplicate.groupby(['nid']).sum()
+        prob = tmp.values
+        res_matrix = []
+        for i in range(prob.shape[1]):
+            a = prob[:, i] / length
+            a[a >= 0.5] = 1
+            a[a < 0.5] = 0
+            res_matrix.append(a)
+        res_matrix = np.array(res_matrix).T
+        accs = []
+        for mask in [self.train_nid, self.val_nid, self.test_nid]:
+            accs.append(f1_score(self.label_matrix[mask], res_matrix[mask], average='micro'))
+        
+        self.model.train()
+
+        return accs[1]
 
 class ActorCritic(nn.Module):
     def __init__(self, state_size):
@@ -283,8 +330,8 @@ class PPO:
             if loss.mean().item() > 100:
                 # print('ratio: ', ratio)
                 # print('advantage: ', advantage)
-                # print('Loss part 1: ', -torch.min(surr1, surr2).mean().item())
-                # print('Loss part 2: ', F.l1_loss(s_value, td_target.detach()).mean().item())
+                print('Loss part 1: ', -torch.min(surr1, surr2).mean().item())
+                print('Loss part 2: ', F.l1_loss(s_value, td_target.detach()).mean().item())
                 print('Loss sum: ', loss.mean().item())
 
             self.optimizer.zero_grad()

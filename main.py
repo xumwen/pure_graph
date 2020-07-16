@@ -102,7 +102,6 @@ def eval_sample(norm_loss):
 
     res_df_list = []
     for data in loader:
-        print("subgraph:", data.x.shape)
         data = data.to(device)
 
         if norm_loss == 1:
@@ -202,13 +201,14 @@ def update_node_emb(node_emb, epoch_node_emb_list, moving_avg=0.9):
     
     return node_emb
 
-def train_ppo_step(data, model, ppo, node_emb, node_df, args, device):
-    env = MetaSampleEnv(data, model, node_emb, node_df, args, device)
+def train_ppo_step(data, model, ppo, node_emb, node_df, label_matrix, args, device):
+    env = MetaSampleEnv(data, model, node_emb, node_df, label_matrix, args, device)
     ppo.train_step(env)
 
 if __name__ == '__main__':
 
     args = parse_args(config_path='./default_hparams.yml')
+    torch.manual_seed(args.seed)
     log_name = get_log_name(args, prefix='test')
     if args.save_log == 1:
         logger = LightLogging(log_path=log_path, log_name=log_name)
@@ -221,9 +221,9 @@ if __name__ == '__main__':
     logger.info('Dataset: {}'.format(args.dataset))
 
     if args.dataset in ['flickr', 'reddit']:
-        is_multi = False
+        args.is_multi = False
     else:
-        is_multi = True
+        args.is_multi = True
 
     data = dataset[0]
 
@@ -233,7 +233,9 @@ if __name__ == '__main__':
     data.y = data.y.long()
 
     # todo add it into dataset or rewrite it in easy way
-    if not is_multi:
+    node_df = None
+    label_matrix = None
+    if not args.is_multi:
         node_df = pd.DataFrame()
         node_df['nid'] = range(data.num_nodes)
         node_df['y'] = data.y.cpu().numpy()
@@ -291,12 +293,12 @@ if __name__ == '__main__':
         
         # evaluation
         if args.eval_sample == 1:
-            if is_multi:
+            if args.is_multi:
                 accs = eval_sample_multi(norm_loss=args.loss_norm)
             else:
                 accs = eval_sample(norm_loss=args.loss_norm)
         else:
-            if is_multi:
+            if args.is_multi:
                 accs = eval_full_multi()
             else:
                 accs = eval_full()
@@ -305,11 +307,11 @@ if __name__ == '__main__':
         if args.sampler == 'meta':
             node_emb = update_node_emb(node_emb, epoch_node_emb_list)
             if epoch > args.meta_start_epoch and epoch % args.train_ppo_interval == 0:
-                train_ppo_step(data, model, ppo, node_emb, node_df, args, device)
+                train_ppo_step(data, model, ppo, node_emb, node_df, label_matrix, args, device)
 
         # logging
         if epoch % args.log_interval == 0:
-            logger.info(f'Epoch: {epoch:02d}, Sub graph: ({sub_graph_nodes}, {sub_graph_edges}), '
+            logger.info(f'Epoch: {epoch:02d}, Sub graph: ({sub_graph_nodes:.2f}, {sub_graph_edges:.2f}), '
                         f'Loss: {loss:.4f}, Train-acc: {accs[0]:.4f}, Val-acc: {accs[1]:.4f}, Test-acc: {accs[2]:.4f}')
 
         summary_accs_train.append(accs[0])
