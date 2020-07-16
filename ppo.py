@@ -158,12 +158,12 @@ class PPO:
             loss = loss_1 + loss_2 + loss_3
 
             if loss.item() > 100:
-                # print('ratio: ', ratio)
-                # print('advantage: ', advantage)
-                print('Loss part 1: ', loss_1.item())
-                print('Loss part 2: ', loss_2.item())
-                print('Loss part 3: ', loss_3.item())
-                print('Loss sum: ', loss.item())
+                # print('ratio: {:.2f}'.format(ratio))
+                # print('advantage: {:.2f}'.format(advantage))
+                print('Loss part 1: {:.2f}'.format(loss_1.item()))
+                print('Loss part 2: {:.2f}'.format(loss_2.item()))
+                print('Loss part 3: {:.2f}'.format(loss_3.item()))
+                print('Loss sum: {:.2f}'.format(loss.item()))
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -172,9 +172,7 @@ class PPO:
         self.policy.cpu()
 
     def train_step(self, env):
-        # print("ppo train start")
         for eid in range(nb_episodes):
-            # print("episode:", eid+1)
             env.reset()
             action_cnt = 0
 
@@ -208,4 +206,3 @@ class PPO:
                 self.memory.rewards.append(r)
             self.train()
             self.memory.clear_mem()
-        # print("ppo train end")
