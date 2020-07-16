@@ -174,4 +174,5 @@ class GATNet(nn.Module):
         x = torch.cat([x1, x2, x3], dim=-1)
         x = self.lin(x)
 
-        return x, x3
+        node_emb = x1 + x2 + x3
+        return x, node_emb
