@@ -10,7 +10,8 @@ from utlis import load_dataset, build_loss_op, build_sampler
 import pandas as pd
 from time import time
 
-from ppo import PPO, MetaSampleEnv
+from ppo import PPO
+from environment import MetaSampleEnv
 
 log_path = './logs'
 summary_path = './summary'
