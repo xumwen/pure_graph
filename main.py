@@ -11,6 +11,7 @@ import pandas as pd
 from time import time
 
 from ppo import PPO
+from sampler import MySAINTSampler
 from environment import MetaSampleEnv
 
 log_path = './logs'
@@ -158,8 +159,8 @@ def eval_sample_multi(norm_loss):
 
     res_df_duplicate = pd.concat(res_df_list)
     length = res_df_duplicate.groupby(['nid']).size().values
-    tmp = res_df_duplicate.groupby(['nid']).sum()
-    prob = tmp.values
+    prob = res_df_duplicate.groupby(['nid']).sum().values
+
     res_matrix = []
     for i in range(prob.shape[1]):
         a = prob[:, i] / length
@@ -167,12 +168,12 @@ def eval_sample_multi(norm_loss):
         a[a < 0.5] = 0
         res_matrix.append(a)
     res_matrix = np.array(res_matrix).T
+
     accs = []
     for mask in [train_nid, val_nid, test_nid]:
         accs.append(f1_score(label_matrix[mask], res_matrix[mask], average='micro'))
 
     return accs
-
 
 def func(x):
     if x in train_nid:
@@ -280,8 +281,12 @@ if __name__ == '__main__':
     for epoch in range(1, args.epochs + 1):
         # build sampler
         if args.sampler == 'meta':
-            loader, msg = build_sampler(args, data, dataset.processed_dir, 
-                                        ppo.policy, node_emb, random_sample=(epoch<=args.meta_start_epoch))
+            # use random walk to warm start gnn before meta_start_epoch
+            if epoch <= args.meta_start_epoch:
+                loader = MySAINTSampler(data, batch_size=args.batch_size, sample_type='random_walk',
+                                        walk_length=2, sample_coverage=1000, save_dir=dataset.processed_dir)
+            else:
+                loader, msg = build_sampler(args, data, dataset.processed_dir, ppo.policy, node_emb)
         else:
             loader, msg = build_sampler(args, data, dataset.processed_dir)
 
@@ -306,7 +311,7 @@ if __name__ == '__main__':
         # train ppo
         if args.sampler == 'meta':
             node_emb = update_node_emb(node_emb, epoch_node_emb_list)
-            if epoch > args.meta_start_epoch and epoch % args.train_ppo_interval == 0:
+            if epoch > args.ppo_start_epoch and epoch % args.train_ppo_interval == 0:
                 train_ppo_step(data, model, ppo, node_emb, node_df, label_matrix, args, device)
 
         # logging

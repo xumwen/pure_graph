@@ -93,80 +93,49 @@ class MetaSampleEnv():
     
     def eval(self):
         """evaluation and return validation f1-micro as reward"""
-        loader = self.meta_sampler.subgraphs
+        subgraph = self.meta_sampler.subgraphs[-1]
         if self.is_multi:
-            r = self.eval_sample_multi(loader)
+            r = self.eval_sample_multi(subgraph)
         else:
-            r = self.eval_sample(loader)
+            r = self.eval_sample(subgraph)
         
         return r
 
-    def eval_sample(self, loader):
+    def eval_sample(self, subgraph):
         self.model.zero_grad()
         self.model.eval()
 
-        res_df_list = []
-        for data in loader:
+        subgraph = subgraph.to(self.device)
+        out, _ = self.model(subgraph.x, subgraph.edge_index)
 
-            data = data.to(self.device)
-            out, _ = self.model(data.x, data.edge_index)
+        out = out.log_softmax(dim=-1)
+        pred = out.argmax(dim=-1).cpu().numpy()
 
-            out = out.log_softmax(dim=-1)
-            pred = out.argmax(dim=-1)
+        val_mask = np.zeros(self.num_nodes, dtype=bool)
+        val_mask[self.val_nid] = True
+        indices = subgraph.indices.cpu().numpy()
+        mask = val_mask[indices]
 
-            res_batch = pd.DataFrame()
-            res_batch['nid'] = data.indices.cpu().numpy()
-            res_batch['pred'] = pred.cpu().numpy()
-            res_df_list.append(res_batch)
+        val_acc = accuracy_score(self.node_df['y'][indices][mask], pred[mask])
 
-        res_df_duplicate = pd.concat(res_df_list)
-        tmp = res_df_duplicate.groupby(['nid', 'pred']).size().unstack().fillna(0)
-        res_df = pd.DataFrame()
-        res_df['nid'] = tmp.index
-        res_df['pred'] = tmp.values.argmax(axis=1)
-
-        res_df.columns = ['nid', 'pred']
-        res_df = res_df.merge(self.node_df, on=['nid'], how='left')
-
-        accs = res_df.groupby(['mask']).apply(lambda x: accuracy_score(x['y'], x['pred'])).reset_index()
-        accs.columns = ['mask', 'acc']
-        accs = accs.sort_values(by=['mask'], ascending=True)
-        accs = accs['acc'].values
-        
         self.model.train()
 
-        return accs[1]
+        return val_acc
     
-    def eval_sample_multi(self, loader):
+    def eval_sample_multi(self, subgraph):
         self.model.zero_grad()
         self.model.eval()
 
-        res_df_list = []
-        for data in loader:
+        subgraph = subgraph.to(self.device)
+        out, _ = self.model(subgraph.x, subgraph.edge_index)
+        pred = (out > 0).float().cpu().numpy()
 
-            data = data.to(self.device)
-            out, _ = self.model(data.x, data.edge_index)
-
-            res_batch = (out > 0).float().cpu().numpy()
-            res_batch = pd.DataFrame(res_batch)
-            res_batch['nid'] = data.indices.cpu().numpy()
-            res_df_list.append(res_batch)
-
-        res_df_duplicate = pd.concat(res_df_list)
-        length = res_df_duplicate.groupby(['nid']).size().values
-        tmp = res_df_duplicate.groupby(['nid']).sum()
-        prob = tmp.values
-        res_matrix = []
-        for i in range(prob.shape[1]):
-            a = prob[:, i] / length
-            a[a >= 0.5] = 1
-            a[a < 0.5] = 0
-            res_matrix.append(a)
-        res_matrix = np.array(res_matrix).T
-        accs = []
-        for mask in [self.train_nid, self.val_nid, self.test_nid]:
-            accs.append(f1_score(self.label_matrix[mask], res_matrix[mask], average='micro'))
+        val_mask = np.zeros(self.num_nodes, dtype=bool)
+        val_mask[self.val_nid] = True
+        indices = subgraph.indices.cpu().numpy()
+        mask = val_mask[indices]
+        val_acc = f1_score(self.label_matrix[indices][mask], pred[mask], average='micro')
         
         self.model.train()
 
-        return accs[1]
+        return val_acc

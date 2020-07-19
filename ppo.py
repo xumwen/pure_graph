@@ -93,8 +93,8 @@ class ActorCritic(nn.Module):
         action_std = action_log_std.exp()
 
         normal = Normal(action_mean, action_std)
-        # print("action mean:", action_mean, "action std:", action_std)
         entropy = normal.entropy()
+        # print("action mean:", action_mean, "action std:", action_std, "entropy:", entropy)
 
         action = normal.sample()
         log_prob = normal.log_prob(action)
@@ -173,7 +173,6 @@ class PPO:
     def train_step(self, env):
         for eid in range(nb_episodes):
             env.reset()
-            action_cnt = 0
 
             # get all subgraphs
             while not env.finish():
@@ -182,6 +181,7 @@ class PPO:
                 if done:
                     break
 
+                action_cnt = 0
                 # get a subgraph step by step
                 for step_i in range(env.sample_step):
                     a, logp = self.policy.action(s)
@@ -198,10 +198,10 @@ class PPO:
                     action_cnt += 1
 
                     if done:
+                        r = env.eval()
+                        for i in range(action_cnt):
+                            self.memory.rewards.append(r)
                         break
-
-            r = env.eval()
-            for i in range(action_cnt):
-                self.memory.rewards.append(r)
+                        
             self.train()
             self.memory.clear_mem()

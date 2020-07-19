@@ -87,8 +87,7 @@ def build_sampler(args, data, save_dir, policy=None, node_emb=None, random_sampl
     elif args.sampler == 'meta':
         msg = 'Use meta sampler'
         meta_sampler = MetaSampler(data, policy=policy, node_emb=node_emb,
-                                subgraph_nodes=args.subgraph_nodes, sample_step=args.sample_step, 
-                                shuffle=True, random_sample=random_sample)
+                                subgraph_nodes=args.subgraph_nodes, sample_step=args.sample_step)
         meta_sampler.sample_subgraphs()
         loader = meta_sampler.subgraphs
     else:
