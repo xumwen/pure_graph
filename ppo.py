@@ -34,6 +34,7 @@ class Memory:
         del self.logprobs[:]
         del self.done_lst[:]
 
+
 class ActorCritic(nn.Module):
     def __init__(self, state_size):
         super(ActorCritic, self).__init__()
@@ -56,6 +57,7 @@ class ActorCritic(nn.Module):
 
         action_mean = self.action_mean(act_hid)
         action_log_std = self.action_log_std(act_hid)
+        # print("action mean:", action_mean.item(), "action log_std:", action_log_std.item())
 
         action_log_std = torch.clamp(action_log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
         action_std = action_log_std.exp()
@@ -94,7 +96,6 @@ class ActorCritic(nn.Module):
 
         normal = Normal(action_mean, action_std)
         entropy = normal.entropy()
-        # print("action mean:", action_mean, "action std:", action_std, "entropy:", entropy)
 
         action = normal.sample()
         log_prob = normal.log_prob(action)
@@ -153,16 +154,16 @@ class PPO:
             ) * advantage
 
             loss_1 = -torch.min(surr1, surr2).mean()
-            loss_2 = F.mse_loss(s_value, td_target.detach()) * 0.1
-            loss_3 = -entropy.mean() * 0.1
+            loss_2 = F.mse_loss(s_value, td_target.detach())
+            # loss_3 = -entropy.mean() * 0.1
 
-            loss = loss_1 + loss_2 + loss_3
+            # loss = loss_1 + loss_2 + loss_3
+            loss = loss_1 + loss_2
 
-            if loss.item() > 100:
-                print('Loss part 1: {:.2f}'.format(loss_1.item()))
-                print('Loss part 2: {:.2f}'.format(loss_2.item()))
-                print('Loss part 3: {:.2f}'.format(loss_3.item()))
-                print('Loss sum: {:.2f}'.format(loss.item()))
+            # if loss.item() > 5.0:
+            print('Loss part 1: {:.2f}'.format(loss_1.item()))
+            print('Loss part 2: {:.2f}'.format(loss_2.item()))
+            print('Loss sum: {:.2f}'.format(loss.item()))
 
             self.optimizer.zero_grad()
             loss.backward()

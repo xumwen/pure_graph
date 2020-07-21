@@ -72,66 +72,50 @@ class MetaSampler(object):
         
         return sample_n_id
 
-    def neighbor_sample(self, neighbor_id, action, min_sample_nodes=10):
-        """ 
-        Neighbor sample calculate kl-divergence between
-        node distribution and action distribution
-        """
-        if len(neighbor_id) <= min_sample_nodes:
-            # avoid small sigma1 which leads kl_div to nan
+    def neighbor_sample(self, n_id, neighbor_id, action, min_sample_num=100):
+        if len(neighbor_id) <= min_sample_num:
+            # sample all neighbors
             return neighbor_id
         
-        action = self.rescale_action(action, neighbor_id)
+        subgraph_emb = self.node_emb[n_id].mean(dim=0)
+        dist = torch.matmul(self.node_emb[neighbor_id], subgraph_emb)
+        dist = self.rescale_dist(dist)
 
-        # action distribution
-        mu1 = action
-        sigma1 = self.node_emb[neighbor_id].std(dim=1).mean()
-
-        # neighbor distribution
-        mu2 = self.node_emb[neighbor_id].mean(dim=1)
-        sigma2 = self.node_emb[neighbor_id].std(dim=1)
-
-        # calculate kl-divergense to sample nodes
-        kl_div = (sigma2 / sigma1).log() + (sigma1**2 + (mu1 - mu2)**2) / (2 * sigma2**2) - 0.5
-        kl_div = self.rescale_kl_divergence(kl_div)
-
-        weight = torch.exp(-kl_div)
+        mu = self.rescale_action(action)
+        sigma = 0.5
+        weight = self.norm_prob(dist, mu, sigma)
+        
+        # prob density maybe over limit
+        weight[weight > 1] = 1
         sample_n_id = neighbor_id[torch.bernoulli(weight) == 1]
 
-        # print("action:", action)
-        # print("kl_div:", kl_div)
-        # print("weight:", weight)
-        # print("sample_num:", len(sample_n_id))
+        # print(f'Cent: {n_id.shape[0]:02d}, Neighbor: {neighbor_id.shape[0]:02d}, '
+        #       f'Sample: {sample_n_id.shape[0]:02d}, Ratio: {(sample_n_id.shape[0] / neighbor_id.shape[0]):.2f}')
 
         return sample_n_id
     
+    def rescale_action(self, action):
+        # rescale mu to (0, 1)
+        action = np.tanh(action)
+        return action * 0.5 + 0.5
+    
+    def rescale_dist(self, dist):
+        # rescale dist to [0, 1]
+        dist = dist -  dist.min()
+        dist = dist / dist.max()
+        return dist
+    
+    def norm_prob(self, x, mu, sigma):
+        s1 = 1.0 / sigma / np.sqrt(2.0 * np.pi)
+        s2 = -((x - mu) ** 2) / 2 / (sigma ** 2)
+        return s1 * torch.exp(s2)
+
     def get_state(self, n_id, neighbor_id):
-        cent_emb = self.node_emb[n_id].sum(dim=0)
-        neighbor_emb = self.node_emb[neighbor_id].sum(dim=0)
+        cent_emb = self.node_emb[n_id].mean(dim=0)
+        neighbor_emb = self.node_emb[neighbor_id].mean(dim=0)
 
         state = torch.cat([cent_emb, neighbor_emb], dim=0)
         return state.detach()
-    
-    def rescale_action(self, action, neighbor_id):
-        # rescale action to get a sample distribution close to nodes_emb distribution
-        # action range is (neighbor_mu_min, neighbor_mu_max)
-        mu = action
-
-        neighbor_mu = self.node_emb[neighbor_id].mean(dim=1)
-        mu_max = neighbor_mu.max()
-        mu_min = neighbor_mu.min()
-
-        mu = np.tanh(mu) * (mu_max - mu_min) / 2 + (mu_max + mu_min) / 2
-
-        return mu
-    
-    def rescale_kl_divergence(self, kl_div, scope=2):
-        # rescale kl_div to avoid sample_weight too small
-        # kl_div range is [0, scope] and then weight range is [exp(-scope), 1]
-        kl_div = kl_div - kl_div.min()
-        kl_div = kl_div / kl_div.max() * scope
-
-        return kl_div
 
     def __produce_subgraph_by_nodes__(self, n_id):
         row, col = self.edge_index
@@ -182,12 +166,10 @@ class MetaSampler(object):
             else:
                 s = self.get_state(n_id, neighbor_id)
                 action, logp = self.policy.action(s)
-                sample_n_id = self.neighbor_sample(neighbor_id, action)
+                sample_n_id = self.neighbor_sample(n_id, neighbor_id, action)
                 sample_n_id = self.random_sample_left_nodes(n_id, sample_n_id)
             
             n_id = np.union1d(n_id, sample_n_id)
-            # print(f'Neighbor: {neighbor_id.shape[0]:02d}, Sample: {sample_n_id.shape[0]:02d}, '
-            #       f'Ratio: {(sample_n_id.shape[0] / neighbor_id.shape[0]):.2f}')
             if len(n_id) >= self.subgraph_nodes or len(sample_n_id) == 0:
                 break
 

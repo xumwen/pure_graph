@@ -34,14 +34,6 @@ class MetaSampleEnv():
                                         subgraph_nodes=self.subgraph_nodes, 
                                         sample_step=self.sample_step)
     
-    def get_state(self):
-        """get state vector of current subgraph"""
-        cent_emb = self.node_emb[self.n_id].sum(dim=0)
-        neighbor_emb = self.node_emb[self.neighbor_id].sum(dim=0)
-
-        state = torch.cat([cent_emb, neighbor_emb], dim=0)
-        return state.detach().cpu()
-    
     def get_init_state(self):
         """Random init nodes and get neighbor, return state"""
         done = False
@@ -49,7 +41,6 @@ class MetaSampleEnv():
         if unvisited_nodes_num <= self.subgraph_nodes:
             # last subgraph
             self.n_id = np.where(self.meta_sampler.node_visit == False)[0]
-            self.neighbor_id = self.n_id
             done = True
             
             subgraph = self.meta_sampler.__produce_subgraph_by_nodes__(self.n_id)
@@ -58,30 +49,32 @@ class MetaSampleEnv():
             self.n_id = self.meta_sampler.get_init_nodes()
             self.neighbor_id = self.meta_sampler.get_neighbor(self.n_id)
         
-        s = self.get_state()
+        s = self.meta_sampler.get_state(self.n_id, self.neighbor_id)
 
         return s, done
     
     def step(self, action, num_step):
         """extend current subgraph with an action"""
-        sample_n_id = self.meta_sampler.neighbor_sample(self.neighbor_id, action)
-        # avoid exceeding subgraph_nodes(always intend to sample all neighbors)
+        sample_n_id = self.meta_sampler.neighbor_sample(self.n_id, self.neighbor_id, action)
+        # last subgraph maybe over subgraph_nodes
         sample_n_id = self.meta_sampler.random_sample_left_nodes(self.n_id, sample_n_id)
 
         self.n_id = np.union1d(self.n_id, sample_n_id)
+        self.neighbor_id = self.meta_sampler.get_neighbor(self.n_id)
         done = False
 
-        if len(self.n_id) >= self.subgraph_nodes or num_step == self.sample_step:
+        # current subgraph maybe have no neighbor or sample nothing
+        no_neighbor = (len(self.neighbor_id) == 0)
+        no_sample = (len(sample_n_id) == 0)
+
+        if len(self.n_id) >= self.subgraph_nodes or num_step == self.sample_step or no_neighbor or no_sample:
             # last extension
-            self.neighbor_id = self.n_id
             done = True
 
             subgraph = self.meta_sampler.__produce_subgraph_by_nodes__(self.n_id)
-            self.meta_sampler.subgraphs.append(subgraph)
-        else:
-            self.neighbor_id = self.meta_sampler.get_neighbor(self.n_id)
+            self.meta_sampler.subgraphs.append(subgraph)            
         
-        s_prime = self.get_state()
+        s_prime = self.meta_sampler.get_state(self.n_id, self.neighbor_id)
 
         return s_prime, done
     
@@ -94,6 +87,7 @@ class MetaSampleEnv():
     def eval(self):
         """evaluation and return validation f1-micro as reward"""
         subgraph = self.meta_sampler.subgraphs[-1]
+        # print(f'Subgraph nodes: {len(subgraph.n_id):02d}, Edges: {len(subgraph.e_id):02d}')
         if self.is_multi:
             r = self.eval_sample_multi(subgraph)
         else:
