@@ -160,10 +160,10 @@ class PPO:
             # loss = loss_1 + loss_2 + loss_3
             loss = loss_1 + loss_2
 
-            # if loss.item() > 5.0:
-            print('Loss part 1: {:.2f}'.format(loss_1.item()))
-            print('Loss part 2: {:.2f}'.format(loss_2.item()))
-            print('Loss sum: {:.2f}'.format(loss.item()))
+            if loss.item() > 2.0:
+                print('Loss part 1: {:.2f}'.format(loss_1.item()))
+                print('Loss part 2: {:.2f}'.format(loss_2.item()))
+                print('Loss sum: {:.2f}'.format(loss.item()))
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -178,9 +178,7 @@ class PPO:
             # get all subgraphs
             while not env.finish():
                 done = False
-                s, done = env.get_init_state()
-                if done:
-                    break
+                s = env.get_init_state()
 
                 action_cnt = 0
                 # get a subgraph step by step

@@ -281,12 +281,9 @@ if __name__ == '__main__':
     for epoch in range(1, args.epochs + 1):
         # build sampler
         if args.sampler == 'meta':
-            # use random walk to warm start gnn before meta_start_epoch
-            if epoch <= args.meta_start_epoch:
-                loader = MySAINTSampler(data, batch_size=args.batch_size, sample_type='random_walk',
-                                        walk_length=2, sample_coverage=1000, save_dir=dataset.processed_dir)
-            else:
-                loader, msg = build_sampler(args, data, dataset.processed_dir, ppo.policy, node_emb)
+            # use random sample to warm start gnn before meta_start_epoch
+            loader, msg = build_sampler(args, data, dataset.processed_dir, ppo.policy, node_emb, 
+                                        random_sample=(args.random_sample==1 or epoch<=args.meta_start_epoch))
         else:
             loader, msg = build_sampler(args, data, dataset.processed_dir)
 
@@ -309,7 +306,7 @@ if __name__ == '__main__':
                 accs = eval_full()
         
         # train ppo
-        if args.sampler == 'meta':
+        if args.sampler == 'meta' and args.random_sample == 0:
             node_emb = update_node_emb(node_emb, epoch_node_emb_list)
             if epoch > args.ppo_start_epoch and epoch % args.train_ppo_interval == 0:
                 train_ppo_step(data, model, ppo, node_emb, node_df, label_matrix, args, device)

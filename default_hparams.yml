@@ -15,9 +15,9 @@ reddit:
   subgraph_nodes: 8700
 
 ppi:
-  epochs: 1500
-  batch_size: 6000
-  subgraph_nodes: 3000
+  epochs: 3500
+  batch_size: 3000
+  subgraph_nodes: 9000
 
   hparams:
     hidden_units:

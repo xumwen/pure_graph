@@ -36,22 +36,12 @@ class MetaSampleEnv():
     
     def get_init_state(self):
         """Random init nodes and get neighbor, return state"""
-        done = False
-        unvisited_nodes_num = self.num_nodes - self.meta_sampler.node_visit.sum()
-        if unvisited_nodes_num <= self.subgraph_nodes:
-            # last subgraph
-            self.n_id = np.where(self.meta_sampler.node_visit == False)[0]
-            done = True
-            
-            subgraph = self.meta_sampler.__produce_subgraph_by_nodes__(self.n_id)
-            self.meta_sampler.subgraphs.append(subgraph)
-        else:
-            self.n_id = self.meta_sampler.get_init_nodes()
-            self.neighbor_id = self.meta_sampler.get_neighbor(self.n_id)
+        self.n_id = self.meta_sampler.get_init_nodes()
+        self.neighbor_id = self.meta_sampler.get_neighbor(self.n_id)
         
         s = self.meta_sampler.get_state(self.n_id, self.neighbor_id)
 
-        return s, done
+        return s
     
     def step(self, action, num_step):
         """extend current subgraph with an action"""
@@ -61,13 +51,9 @@ class MetaSampleEnv():
 
         self.n_id = np.union1d(self.n_id, sample_n_id)
         self.neighbor_id = self.meta_sampler.get_neighbor(self.n_id)
+
         done = False
-
-        # current subgraph maybe have no neighbor or sample nothing
-        no_neighbor = (len(self.neighbor_id) == 0)
-        no_sample = (len(sample_n_id) == 0)
-
-        if len(self.n_id) >= self.subgraph_nodes or num_step == self.sample_step or no_neighbor or no_sample:
+        if len(self.n_id) >= self.subgraph_nodes or num_step == self.sample_step:
             # last extension
             done = True
 
@@ -124,12 +110,13 @@ class MetaSampleEnv():
         out, _ = self.model(subgraph.x, subgraph.edge_index)
         pred = (out > 0).float().cpu().numpy()
 
-        val_mask = np.zeros(self.num_nodes, dtype=bool)
-        val_mask[self.val_nid] = True
         indices = subgraph.indices.cpu().numpy()
-        mask = val_mask[indices]
-        val_acc = f1_score(self.label_matrix[indices][mask], pred[mask], average='micro')
+        # val_mask = np.zeros(self.num_nodes, dtype=bool)
+        # val_mask[self.val_nid] = True
+        # mask = val_mask[indices]
+        # val_acc = f1_score(self.label_matrix[indices][mask], pred[mask], average='micro')
+        acc = f1_score(self.label_matrix[indices], pred, average='micro')
         
         self.model.train()
 
-        return val_acc
+        return acc

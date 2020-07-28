@@ -37,9 +37,11 @@ class MetaSampler(object):
         if self.shuffle:
             np.random.shuffle(left_nodes)
         if len(left_nodes) <= num_init_nodes:
-            return left_nodes
-            
-        return left_nodes[:num_init_nodes]
+            n_id = left_nodes
+        else:
+            n_id = left_nodes[:num_init_nodes]
+
+        return n_id
 
     def get_neighbor(self, n_id):
         row, col = self.edge_index
@@ -51,10 +53,10 @@ class MetaSampler(object):
         torch.index_select(node_mask, 0, row, out=edge_mask)
         new_n_id = col[edge_mask].numpy()
         
-        # remove visited and cent nodes
+        # remove cent nodes
         tmp_node_mask = torch.zeros(self.num_nodes, dtype=torch.bool)
         tmp_node_mask[new_n_id] = True
-        neighbor_id = np.where(tmp_node_mask & (node_mask==False) & (self.node_visit==False))[0]
+        neighbor_id = np.where(tmp_node_mask & (node_mask==False))[0]
 
         return neighbor_id
 
@@ -69,6 +71,9 @@ class MetaSampler(object):
             sample_n_id = neighbor_id
         else:
             sample_n_id = neighbor_id[:num_left]
+        
+        # print(f'Cent: {n_id.shape[0]:02d}, Neighbor: {neighbor_id.shape[0]:02d}, '
+        #       f'Sample: {sample_n_id.shape[0]:02d}')
         
         return sample_n_id
 
@@ -89,7 +94,7 @@ class MetaSampler(object):
         weight[weight > 1] = 1
         sample_n_id = neighbor_id[torch.bernoulli(weight) == 1]
 
-        # print(f'Cent: {n_id.shape[0]:02d}, Neighbor: {neighbor_id.shape[0]:02d}, '
+        # print(f'Action: {mu.item():.2f}, Cent: {n_id.shape[0]:02d}, Neighbor: {neighbor_id.shape[0]:02d}, '
         #       f'Sample: {sample_n_id.shape[0]:02d}, Ratio: {(sample_n_id.shape[0] / neighbor_id.shape[0]):.2f}')
 
         return sample_n_id
@@ -147,15 +152,11 @@ class MetaSampler(object):
                 data[key] = item[e_id]
         data.n_id = n_id
         data.e_id = e_id
+        # print(f'Subgraph nodes: {len(data.n_id):02d}, Edges: {len(data.e_id):02d}')
 
         return data
 
     def __produce_subgraph__(self):
-        if self.num_nodes - self.node_visit.sum() <= self.subgraph_nodes:
-            # last subgraph
-            n_id = np.where(self.node_visit == False)[0]
-            return self.__produce_subgraph_by_nodes__(n_id)
-
         # sample several steps
         n_id = self.get_init_nodes()
 

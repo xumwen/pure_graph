@@ -59,25 +59,25 @@ def build_sampler(args, data, save_dir, policy=None, node_emb=None, random_sampl
     if args.sampler == 'rw-my':
         msg = 'Use GraphSaint randomwalk sampler(mysaint sampler)'
         loader = MySAINTSampler(data, batch_size=args.batch_size, sample_type='random_walk',
-                                walk_length=2, sample_coverage=1000, save_dir=save_dir)
+                                walk_length=2, sample_coverage=50, save_dir=save_dir)
     elif args.sampler == 'node-my':
         msg = 'Use random node sampler(mysaint sampler)'
         loader = MySAINTSampler(data, sample_type='node', batch_size=args.batch_size * 3,
-                                walk_length=2, sample_coverage=1000, save_dir=save_dir)
+                                walk_length=2, sample_coverage=50, save_dir=save_dir)
     elif args.sampler == 'rw':
         msg = 'Use GraphSaint randomwalk sampler'
         loader = GraphSAINTRandomWalkSampler(data, batch_size=args.batch_size, walk_length=2,
-                                             num_steps=5, sample_coverage=1000,
+                                             num_steps=5, sample_coverage=50,
                                              save_dir=save_dir)
     elif args.sampler == 'node':
         msg = 'Use GraphSaint node sampler'
         loader = GraphSAINTNodeSampler(data, batch_size=args.batch_size * 3,
-                                       num_steps=5, sample_coverage=1000, num_workers=0, save_dir=save_dir)
+                                       num_steps=5, sample_coverage=50, num_workers=0, save_dir=save_dir)
 
     elif args.sampler == 'edge':
         msg = 'Use GraphSaint edge sampler'
         loader = GraphSAINTEdgeSampler(data, batch_size=args.batch_size,
-                                       num_steps=5, sample_coverage=1000,
+                                       num_steps=5, sample_coverage=50,
                                        save_dir=save_dir, num_workers=0)
     elif args.sampler == 'cluster':
         msg = 'Use cluster sampler'
@@ -87,9 +87,14 @@ def build_sampler(args, data, save_dir, policy=None, node_emb=None, random_sampl
     elif args.sampler == 'meta':
         msg = 'Use meta sampler'
         meta_sampler = MetaSampler(data, policy=policy, node_emb=node_emb,
-                                subgraph_nodes=args.subgraph_nodes, sample_step=args.sample_step)
+                                subgraph_nodes=args.subgraph_nodes, 
+                                sample_step=args.sample_step,
+                                random_sample=random_sample)
         meta_sampler.sample_subgraphs()
         loader = meta_sampler.subgraphs
+        # print('Subgraph num:', len(loader))
+        # for subgraph in loader:
+        #     print(f'Subgraph nodes: {len(subgraph.n_id):02d}, edges: {len(subgraph.e_id):02d}')
     else:
         raise KeyError('Sampler type error')
 
